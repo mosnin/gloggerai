@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --content-max: 42rem;
+}
+
+.prose-article {
+  @apply font-serif text-[19px] leading-[1.7] text-neutral-900;
+}
+.prose-article h1,
+.prose-article h2,
+.prose-article h3 {
+  @apply font-sans font-bold tracking-tight text-neutral-950 mt-10 mb-3;
+}
+.prose-article h2 { @apply text-2xl; }
+.prose-article h3 { @apply text-xl; }
+.prose-article p  { @apply my-5; }
+.prose-article a  { @apply text-emerald-700 underline underline-offset-2; }
+.prose-article code { @apply font-mono text-[0.92em] bg-neutral-100 px-1 py-0.5 rounded; }
+.prose-article pre { @apply font-mono text-sm bg-neutral-950 text-neutral-50 p-4 rounded-lg overflow-x-auto my-6; }
+.prose-article pre code { @apply bg-transparent text-inherit p-0; }
+.prose-article blockquote { @apply border-l-4 border-neutral-200 pl-4 italic text-neutral-700; }
+.prose-article ul { @apply list-disc pl-6 my-5; }
+.prose-article ol { @apply list-decimal pl-6 my-5; }
+.prose-article img { @apply rounded-lg my-6; }
