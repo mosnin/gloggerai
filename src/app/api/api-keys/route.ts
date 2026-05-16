@@ -4,6 +4,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { apiKeys } from "@/db/schema";
 import { authenticate } from "@/lib/api/auth-guard";
+import { requireCsrf } from "@/lib/api/csrf";
 import { ok, fail } from "@/lib/api/response";
 import { ALL_SCOPES, generateApiKey } from "@/lib/auth/api-key";
 
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
   const auth = await authenticate(req);
   if (auth instanceof Response) return auth;
   if (auth.kind !== "session") return fail("session_required", "API key creation requires a signed-in session", 403);
+  const csrf = await requireCsrf(req);
+  if (csrf) return csrf;
 
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());

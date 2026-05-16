@@ -231,3 +231,5 @@ export const postViews = pgTable("post_views", {
   isBot: boolean("is_bot").notNull().default(false),
   sessionHash: text("session_hash"),
 });
+
+export * from "./schemas/security";

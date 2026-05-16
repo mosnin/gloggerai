@@ -11,9 +11,11 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     const f = new FormData(e.currentTarget);
+    const csrfRes = await fetch("/api/csrf");
+    const csrf = ((await csrfRes.json()) as { token: string }).token;
     const res = await fetch("/api/auth/login", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-csrf-token": csrf },
       body: JSON.stringify({ email: f.get("email"), password: f.get("password") }),
     });
     setLoading(false);
@@ -35,6 +37,9 @@ export default function LoginPage() {
           {loading ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      <p className="mt-4 text-sm text-neutral-600">
+        <a href="/forgot-password" className="underline">Forgot password?</a>
+      </p>
     </main>
   );
 }

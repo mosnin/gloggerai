@@ -41,20 +41,47 @@ async function tick() {
   return claimed.length;
 }
 
-/** Run the worker forever. Sleeps when no work. */
+/** Run the worker forever. Sleeps when no work. Stops cleanly on SIGTERM/SIGINT. */
 export async function runWorker(opts: { intervalMs?: number } = {}): Promise<void> {
   const interval = opts.intervalMs ?? 2_000;
   log.info("jobs.worker_started", { workerId: WORKER_ID, intervalMs: interval, batch: BATCH });
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const n = await tick().catch((err) => {
-      log.error("jobs.tick_error", {
-        workerId: WORKER_ID,
-        error: err instanceof Error ? err.message : String(err),
+
+  let shouldStop = false;
+  let wake: (() => void) | null = null;
+  const onSignal = (sig: NodeJS.Signals) => {
+    if (shouldStop) return;
+    shouldStop = true;
+    log.info("jobs.shutdown_signal", { workerId: WORKER_ID, signal: sig });
+    if (wake) wake();
+  };
+  process.on("SIGTERM", onSignal);
+  process.on("SIGINT", onSignal);
+
+  try {
+    while (!shouldStop) {
+      const n = await tick().catch((err) => {
+        log.error("jobs.tick_error", {
+          workerId: WORKER_ID,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return 0;
       });
-      return 0;
-    });
-    if (n === 0) await new Promise((r) => setTimeout(r, interval));
+      if (shouldStop) break;
+      if (n === 0) {
+        await new Promise<void>((r) => {
+          wake = r;
+          const t = setTimeout(() => {
+            wake = null;
+            r();
+          }, interval);
+          if (typeof t.unref === "function") t.unref();
+        });
+      }
+    }
+  } finally {
+    process.off("SIGTERM", onSignal);
+    process.off("SIGINT", onSignal);
+    log.info("jobs.worker_stopped", { workerId: WORKER_ID });
   }
 }
 

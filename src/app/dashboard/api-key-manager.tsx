@@ -20,11 +20,17 @@ export function ApiKeyManager({ initialKeys }: { initialKeys: Key[] }) {
   const [created, setCreated] = useState<{ key: string; prefix: string } | null>(null);
   const [creating, setCreating] = useState(false);
 
+  async function csrfToken(): Promise<string> {
+    const r = await fetch("/api/csrf");
+    return ((await r.json()) as { token: string }).token;
+  }
+
   async function create() {
     setCreating(true);
+    const csrf = await csrfToken();
     const res = await fetch("/api/api-keys", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-csrf-token": csrf },
       body: JSON.stringify({ name, scopes, rateLimitPerMinute: 60 }),
     });
     setCreating(false);
@@ -40,7 +46,11 @@ export function ApiKeyManager({ initialKeys }: { initialKeys: Key[] }) {
 
   async function revoke(id: string) {
     if (!confirm("Revoke this key? Agents using it will stop working.")) return;
-    const res = await fetch(`/api/api-keys/${id}`, { method: "DELETE" });
+    const csrf = await csrfToken();
+    const res = await fetch(`/api/api-keys/${id}`, {
+      method: "DELETE",
+      headers: { "x-csrf-token": csrf },
+    });
     if (res.ok) setKeys((prev) => prev.filter((k) => k.id !== id));
   }
 

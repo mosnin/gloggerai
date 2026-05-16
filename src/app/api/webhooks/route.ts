@@ -5,6 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { webhooks } from "@/db/schema";
 import { authenticate } from "@/lib/api/auth-guard";
+import { requireCsrf } from "@/lib/api/csrf";
 import { fail, ok } from "@/lib/api/response";
 
 const KNOWN_EVENTS = ["post.published", "post.updated", "post.deleted"] as const;
@@ -34,6 +35,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await authenticate(req);
   if (auth instanceof Response) return auth;
+  const csrf = await requireCsrf(req);
+  if (csrf) return csrf;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());
   const secret = `whsec_${randomBytes(24).toString("base64url")}`;
@@ -57,6 +60,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await authenticate(req);
   if (auth instanceof Response) return auth;
+  const csrf = await requireCsrf(req);
+  if (csrf) return csrf;
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   if (!id) return fail("missing_id", "id query param required", 422);

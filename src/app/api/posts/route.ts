@@ -3,6 +3,7 @@ import { authenticate, requireScope } from "@/lib/api/auth-guard";
 import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
 import { checkDailyPostLimit } from "@/lib/api/abuse";
 import { bumpUsage, checkPostQuota, requireFeature } from "@/lib/billing/service";
+import { isEmailVerified } from "@/lib/auth/email-verification";
 import { ok, fail } from "@/lib/api/response";
 import { PostCreate, PostListQuery } from "@/lib/posts/schema";
 import { createPost, listPosts } from "@/lib/posts/service";
@@ -46,6 +47,9 @@ export async function POST(req: NextRequest) {
   if (parsed.data.status === "published" && auth.kind === "api_key") {
     const publishFail = requireScope(auth, "posts:publish");
     if (publishFail) return publishFail;
+    if (!(await isEmailVerified(auth.user.id))) {
+      return fail("email_not_verified", "Verify your email before publishing", 403);
+    }
   }
 
   const limit = await checkDailyPostLimit(auth.user.id);

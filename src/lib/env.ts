@@ -15,6 +15,8 @@ const schema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRO_PRICE_ID: z.string().optional(),
   STRIPE_SCALE_PRICE_ID: z.string().optional(),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
 });
 
 export const env = schema.parse({
@@ -32,6 +34,8 @@ export const env = schema.parse({
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
   STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID,
   STRIPE_SCALE_PRICE_ID: process.env.STRIPE_SCALE_PRICE_ID,
+  TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
 });
 
 export const s3Configured =
