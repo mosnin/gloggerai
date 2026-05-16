@@ -12,8 +12,8 @@ type Props = { params: Promise<{ handle: string; slug: string }> };
 async function resolve(params: Props["params"]) {
   const { handle, slug } = await params;
   const decoded = decodeURIComponent(handle);
-  const cleaned = decoded.startsWith("@") ? decoded.slice(1) : decoded;
-  return getPost({ authorHandle: cleaned, slug });
+  if (!decoded.startsWith("@")) return null;
+  return getPost({ authorHandle: decoded.slice(1), slug });
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

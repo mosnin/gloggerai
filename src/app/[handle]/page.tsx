@@ -11,7 +11,8 @@ type Props = { params: Promise<{ handle: string }> };
 
 async function loadAuthor(handle: string) {
   const decoded = decodeURIComponent(handle);
-  const cleaned = decoded.startsWith("@") ? decoded.slice(1) : decoded;
+  if (!decoded.startsWith("@")) return null;
+  const cleaned = decoded.slice(1);
   const [user] = await db.select().from(users).where(eq(users.handle, cleaned)).limit(1);
   return user ?? null;
 }

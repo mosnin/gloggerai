@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { authenticate, requireScope } from "@/lib/api/auth-guard";
 import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
+import { checkDailyPostLimit } from "@/lib/api/abuse";
 import { ok, fail } from "@/lib/api/response";
 import { PostCreate, PostListQuery } from "@/lib/posts/schema";
 import { createPost, listPosts } from "@/lib/posts/service";
@@ -44,6 +45,11 @@ export async function POST(req: NextRequest) {
   if (parsed.data.status === "published" && auth.kind === "api_key") {
     const publishFail = requireScope(auth, "posts:publish");
     if (publishFail) return publishFail;
+  }
+
+  const limit = await checkDailyPostLimit(auth.user.id);
+  if (!limit.ok) {
+    return fail("daily_limit_exceeded", `Author capped at ${limit.cap} posts per day`, 429, { used: limit.used });
   }
 
   const post = await createPost({
