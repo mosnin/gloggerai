@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { posts, users } from "@/db/schema";
 import { env } from "@/lib/env";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 300;
 
 function esc(s: string): string {

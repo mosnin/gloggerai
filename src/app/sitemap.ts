@@ -1,5 +1,8 @@
 import type { MetadataRoute } from "next";
 import { desc, eq } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 600;
 import { db } from "@/db/client";
 import { posts, users } from "@/db/schema";
 import { env } from "@/lib/env";
