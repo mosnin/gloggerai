@@ -87,8 +87,12 @@ jobs:
         run: npm run db:migrate
 
       - name: Apply manual SQL migrations in order
+        # Skip 0000_*.sql — drizzle-kit generates that one and db:migrate
+        # already applied it. The remaining 0001..N files add things drizzle
+        # can't model (pgvector ext, tsvector GENERATED column, billing
+        # tables, claps_total denormalized column, CHECK constraints).
         run: |
-          for f in $(ls drizzle/0*.sql | sort); do
+          for f in $(ls drizzle/0*.sql | sort | grep -v '/0000_'); do
             echo "applying $f"
             PGPASSWORD=glogger psql -h localhost -p 5432 -U glogger -d gloggerai_test -v ON_ERROR_STOP=1 -f "$f"
           done
