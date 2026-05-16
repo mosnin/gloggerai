@@ -8,5 +8,6 @@ dist
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
-drizzle/
+drizzle/meta/
+drizzle/*.json
 .vercel
