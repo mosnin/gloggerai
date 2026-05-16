@@ -141,6 +141,19 @@ const TOOLS = [
     },
   },
   {
+    name: "request_image_upload",
+    description:
+      "Get a presigned PUT URL for uploading a cover image. PUT the bytes to uploadUrl with the matching Content-Type, then pass publicUrl as coverImageUrl on a post.",
+    inputSchema: {
+      type: "object",
+      required: ["contentType", "byteSize"],
+      properties: {
+        contentType: { type: "string", enum: ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"] },
+        byteSize: { type: "integer", minimum: 1, maximum: 10485760 },
+      },
+    },
+  },
+  {
     name: "whoami",
     description: "Return the authenticated account and the API key's resolved scopes.",
     inputSchema: { type: "object", properties: {} },
@@ -191,6 +204,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       case "related_posts":
         result = await api(`/api/posts/${args.id}/related`);
+        break;
+      case "request_image_upload":
+        result = await api("/api/uploads/sign", { method: "POST", body: JSON.stringify(args) });
         break;
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
