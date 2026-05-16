@@ -1,8 +1,12 @@
 -- Durable jobs + outbound webhooks. Postgres-backed so we can run in-process or via cron;
 -- swap to Inngest/Trigger.dev later without changing the producer side.
 
-CREATE TYPE job_kind AS ENUM ('publish_scheduled', 'embed_post', 'deliver_webhook');
-CREATE TYPE job_status AS ENUM ('pending', 'running', 'done', 'failed');
+DO $$ BEGIN
+  CREATE TYPE job_kind AS ENUM ('publish_scheduled', 'embed_post', 'deliver_webhook');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE TYPE job_status AS ENUM ('pending', 'running', 'done', 'failed');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE TABLE IF NOT EXISTS jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

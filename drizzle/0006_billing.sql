@@ -1,5 +1,9 @@
-CREATE TYPE plan_tier AS ENUM ('free', 'pro', 'scale');
-CREATE TYPE subscription_status AS ENUM ('active', 'trialing', 'past_due', 'canceled');
+DO $$ BEGIN
+  CREATE TYPE plan_tier AS ENUM ('free', 'pro', 'scale');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE TYPE subscription_status AS ENUM ('active', 'trialing', 'past_due', 'canceled');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE TABLE IF NOT EXISTS subscriptions (
   user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

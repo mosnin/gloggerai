@@ -1,4 +1,6 @@
-CREATE TYPE org_role AS ENUM ('owner', 'admin', 'editor', 'agent');
+DO $$ BEGIN
+  CREATE TYPE org_role AS ENUM ('owner', 'admin', 'editor', 'agent');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE TABLE IF NOT EXISTS organizations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
