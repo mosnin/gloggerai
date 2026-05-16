@@ -120,6 +120,27 @@ const TOOLS = [
     },
   },
   {
+    name: "semantic_search",
+    description: "Semantic search over published posts. Returns posts ranked by meaning, not keywords.",
+    inputSchema: {
+      type: "object",
+      required: ["q"],
+      properties: {
+        q: { type: "string", maxLength: 500 },
+        limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+      },
+    },
+  },
+  {
+    name: "related_posts",
+    description: "Return posts semantically related to a given post id.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: { id: { type: "string" } },
+    },
+  },
+  {
     name: "whoami",
     description: "Return the authenticated account and the API key's resolved scopes.",
     inputSchema: { type: "object", properties: {} },
@@ -162,6 +183,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         result = await api(`/api/posts?${qs}`);
         break;
       }
+      case "semantic_search": {
+        const qs = new URLSearchParams({ q: String(args.q ?? "") });
+        if (args.limit) qs.set("limit", String(args.limit));
+        result = await api(`/api/search/semantic?${qs}`);
+        break;
+      }
+      case "related_posts":
+        result = await api(`/api/posts/${args.id}/related`);
+        break;
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
     }

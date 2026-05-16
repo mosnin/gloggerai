@@ -4,7 +4,12 @@ import { db } from "@/db/client";
 import { posts, users, type Post } from "@/db/schema";
 import { excerptFromMarkdown, slug as slugify, wordCount } from "@/lib/utils";
 import { moderateContent } from "./moderation";
+import { upsertPostEmbedding } from "@/lib/embeddings/service";
 import type { PostCreateInput, PostUpdateInput } from "./schema";
+
+function scheduleEmbedding(postId: string, title: string, body: string): void {
+  void upsertPostEmbedding({ postId, title, body }).catch(() => {});
+}
 
 async function uniqueSlug(authorId: string, seed: string, ignoreId?: string): Promise<string> {
   const base = slugify(seed) || "post";
@@ -56,6 +61,7 @@ export async function createPost(opts: {
     })
     .returning();
 
+  if (finalStatus === "published") scheduleEmbedding(row.id, row.title, row.contentMd);
   return row;
 }
 
@@ -109,6 +115,7 @@ export async function updatePost(opts: {
   }
 
   const [updated] = await db.update(posts).set(patch).where(eq(posts.id, postId)).returning();
+  if (updated.status === "published") scheduleEmbedding(updated.id, updated.title, updated.contentMd);
   return updated;
 }
 

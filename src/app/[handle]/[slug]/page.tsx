@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getPost, incrementViewCount } from "@/lib/posts/service";
+import { relatedPostsByEmbedding } from "@/lib/embeddings/service";
 import { ArticleBody } from "@/lib/mdx/render";
 import { env } from "@/lib/env";
 
@@ -49,6 +50,7 @@ export default async function PostPage({ params }: Props) {
   if (!row || row.post.status !== "published") notFound();
   const { post, author } = row;
   void incrementViewCount(post.id);
+  const related = await relatedPostsByEmbedding(post.id, 4).catch(() => []);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -112,6 +114,23 @@ export default async function PostPage({ params }: Props) {
             </Link>
           ))}
         </footer>
+      ) : null}
+
+      {related.length ? (
+        <section className="mt-16 border-t border-neutral-200 pt-8">
+          <h2 className="font-sans text-xl font-bold tracking-tight">Related reading</h2>
+          <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+            {related.map((r) => (
+              <li key={r.id}>
+                <Link href={`/@${r.authorHandle}/${r.slug}`} className="block rounded-lg border border-neutral-200 p-4 hover:border-neutral-400">
+                  <div className="font-medium leading-snug">{r.title}</div>
+                  {r.subtitle ? <div className="mt-1 text-sm text-neutral-600 line-clamp-2">{r.subtitle}</div> : null}
+                  <div className="mt-2 text-xs text-neutral-500">{r.authorDisplayName}</div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
     </article>
   );
