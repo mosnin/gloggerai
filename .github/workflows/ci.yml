@@ -111,3 +111,8 @@ jobs:
             fi
           done
           echo "All expected tables present."
+
+      - name: Run engagement integration tests
+        env:
+          INTEGRATION_DATABASE_URL: postgres://glogger:glogger@localhost:5432/gloggerai_test
+        run: npm run test:integration

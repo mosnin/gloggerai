@@ -56,11 +56,16 @@ export async function notifyPostPublished(opts: {
   tags: string[];
 }): Promise<void> {
   // Union of user-followers and topic-followers, capped, excluding the author.
+  // The tag list is interpolated as individual params via sql.join because
+  // drizzle's sql tag doesn't auto-serialize JS arrays to PG text[].
+  const tagsParam = opts.tags.length
+    ? sql`(${sql.join(opts.tags.map((t) => sql`${t}`), sql`, `)})`
+    : sql`(NULL)`;
   const recipients = await db.execute<{ user_id: string }>(sql`
     SELECT DISTINCT user_id FROM (
       SELECT follower_id AS user_id FROM follows WHERE followee_id = ${opts.authorId}
       UNION
-      SELECT user_id FROM topic_follows WHERE tag = ANY(${opts.tags}::text[])
+      SELECT user_id FROM topic_follows WHERE tag IN ${tagsParam}
     ) recipients
     WHERE user_id <> ${opts.authorId}
     LIMIT ${FANOUT_CAP}
