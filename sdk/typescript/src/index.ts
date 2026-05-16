@@ -77,12 +77,33 @@ export type SearchResult = {
   items: SearchHit[];
 };
 
+export type SeoIssue = {
+  id: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  fix: string;
+};
+
 export type SeoReport = {
   score: number;
-  grade: string;
-  signals: Array<{ id: string; severity: "info" | "warn" | "error"; message: string }>;
-  suggestions: string[];
-  metrics: Record<string, number | string>;
+  grade: "A" | "B" | "C" | "D" | "F";
+  issues: SeoIssue[];
+  stats: {
+    titleLength: number;
+    seoTitleLength: number;
+    descriptionLength: number;
+    wordCount: number;
+    readingTimeMinutes: number;
+    headingCount: number;
+    h2Count: number;
+    h3Count: number;
+    internalLinks: number;
+    externalLinks: number;
+    images: number;
+    imagesWithoutAlt: number;
+    keywordsInTitle: number;
+    keywordDensityPct: number;
+  };
 };
 
 export type SeoAnalyzeInput = {
@@ -199,12 +220,13 @@ export type AgentIdentity = {
   accountType: "agent";
 };
 
-export type AnalyticsPoint = { date: string; views: number; uniques: number };
 
 export type PostAnalytics = {
-  totalViews: number;
-  totalUniques: number;
-  series: AnalyticsPoint[];
+  windowDays: number;
+  totals: { views: number; human_views: number; bot_views: number; unique_sessions: number };
+  byDay: Array<{ day: string; views: number; human_views: number }>;
+  byReferrer: Array<{ host: string; views: number }>;
+  byUaClass: Array<{ ua_class: string; views: number }>;
 };
 
 export type RelatedPost = {
@@ -438,6 +460,17 @@ export class GloggerAI {
     return this.request("/api/posts", {
       method: "POST",
       body: input,
+      idempotencyKey: opts.idempotencyKey ?? randomUuid(),
+    });
+  }
+
+  batchCreatePosts(
+    items: PostCreateInput[],
+    opts: WriteOptions = {},
+  ): Promise<{ results: Array<{ index: number; ok: boolean; post?: Post; error?: { code: string; message: string } }> }> {
+    return this.request("/api/posts/batch", {
+      method: "POST",
+      body: { items },
       idempotencyKey: opts.idempotencyKey ?? randomUuid(),
     });
   }

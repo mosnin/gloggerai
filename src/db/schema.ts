@@ -88,7 +88,6 @@ export const posts = pgTable(
     moderationNotes: text("moderation_notes"),
     readingTimeMinutes: integer("reading_time_minutes").notNull().default(1),
     wordCount: integer("word_count").notNull().default(0),
-    viewCount: integer("view_count").notNull().default(0),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publishAt: timestamp("publish_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
