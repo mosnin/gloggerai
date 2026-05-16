@@ -1,0 +1,88 @@
+import { NextRequest } from "next/server";
+import { authenticate, requireScope } from "@/lib/api/auth-guard";
+import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
+import { checkDailyPostLimit } from "@/lib/api/abuse";
+import { bumpUsage, checkPostQuota, requireFeature } from "@/lib/billing/service";
+import { isEmailVerified } from "@/lib/auth/email-verification";
+import { ok, fail } from "@/lib/api/response";
+import { PostCreate, PostListQuery } from "@/lib/posts/schema";
+import { createPost, listPosts } from "@/lib/posts/service";
+
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  const parsed = PostListQuery.safeParse(Object.fromEntries(url.searchParams));
+  if (!parsed.success) return fail("invalid_query", "Invalid query parameters", 422, parsed.error.flatten());
+
+  const auth = await authenticate(req).catch(() => null);
+  const requestedStatus = parsed.data.status;
+  const isAuthed = auth && !(auth instanceof Response);
+
+  if (requestedStatus && requestedStatus !== "published" && !isAuthed) {
+    return fail("unauthenticated", "Authenticate to list non-published posts", 401);
+  }
+
+  const result = await listPosts({
+    status: requestedStatus ?? "published",
+    authorHandle: parsed.data.authorHandle,
+    tag: parsed.data.tag,
+    q: parsed.data.q,
+    limit: parsed.data.limit,
+    cursor: parsed.data.cursor,
+  });
+  return ok(result);
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await authenticate(req);
+  if (auth instanceof Response) return auth;
+  const scopeFail = requireScope(auth, "posts:write");
+  if (scopeFail) return scopeFail;
+
+  const idemp = await checkIdempotency(req, auth.kind === "api_key" ? auth.key.id : null);
+  if (idemp.cached) return idemp.cached;
+
+  const parsed = PostCreate.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());
+
+  if (parsed.data.status === "published" && auth.kind === "api_key") {
+    const publishFail = requireScope(auth, "posts:publish");
+    if (publishFail) return publishFail;
+    if (!(await isEmailVerified(auth.user.id))) {
+      return fail("email_not_verified", "Verify your email before publishing", 403);
+    }
+  }
+
+  const limit = await checkDailyPostLimit(auth.user.id);
+  if (!limit.ok) {
+    return fail("daily_limit_exceeded", `Author capped at ${limit.cap} posts per day`, 429, { used: limit.used });
+  }
+
+  const quota = await checkPostQuota(auth.user.id);
+  if (!quota.ok) {
+    return fail("plan_quota_exceeded", quota.reason, 402, { limit: quota.limit, used: quota.used });
+  }
+
+  if (parsed.data.publishAt) {
+    const feat = await requireFeature(auth.user.id, "scheduledPublishing");
+    if (!feat.ok) return fail("plan_feature_required", feat.reason, 402);
+  }
+
+  const post = await createPost({
+    authorId: auth.user.id,
+    apiKeyId: auth.kind === "api_key" ? auth.key.id : null,
+    input: parsed.data,
+  });
+
+  await bumpUsage({
+    userId: auth.user.id,
+    postsCreated: 1,
+    postsPublished: post.status === "published" ? 1 : 0,
+  });
+
+  const body = { post };
+  const status = 201;
+  if (idemp.key && auth.kind === "api_key") {
+    await storeIdempotent(idemp.key, auth.key.id, "POST", "/api/posts", status, body);
+  }
+  return ok(body, { status });
+}
