@@ -1,7 +1,10 @@
 /**
  * Zero-dependency structured logger. Emits one JSON line per call to stdout
- * (stderr for `error`) so the platform log pipeline can index it.
+ * (stderr for `error`) so the platform log pipeline can index it. Errors
+ * also fan out to Sentry when SENTRY_DSN is configured.
  */
+import { captureException } from "./sentry";
+
 type Level = "info" | "warn" | "error";
 
 function write(level: Level, event: string, fields?: Record<string, unknown>): void {
@@ -24,6 +27,11 @@ function write(level: Level, event: string, fields?: Record<string, unknown>): v
   }
   if (level === "error") {
     process.stderr.write(line + "\n");
+    const err = fields?.error;
+    captureException(err instanceof Error ? err : new Error(typeof err === "string" ? err : event), {
+      event,
+      ...fields,
+    });
   } else {
     process.stdout.write(line + "\n");
   }

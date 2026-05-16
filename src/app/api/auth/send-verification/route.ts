@@ -1,7 +1,7 @@
 import { authenticate } from "@/lib/api/auth-guard";
 import { fail, ok } from "@/lib/api/response";
 import { createVerificationToken, isEmailVerified } from "@/lib/auth/email-verification";
-import { env } from "@/lib/env";
+import { sendVerificationEmail } from "@/lib/email/transactional";
 import type { NextRequest } from "next/server";
 
 export async function POST(req: NextRequest) {
@@ -11,9 +11,6 @@ export async function POST(req: NextRequest) {
   if (await isEmailVerified(auth.user.id)) return ok({ ok: true, alreadyVerified: true });
 
   const token = await createVerificationToken(auth.user.id);
-  const url = `${env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "")}/verify-email?token=${token}`;
-  if (process.env.NODE_ENV !== "production") {
-    console.log(`[auth] email verification url for ${auth.user.email}: ${url}`);
-  }
-  return ok({ ok: true });
+  const result = await sendVerificationEmail(auth.user.email, token);
+  return ok({ ok: true, delivered: result.delivered, provider: result.provider });
 }

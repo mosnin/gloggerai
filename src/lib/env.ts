@@ -17,6 +17,10 @@ const schema = z.object({
   STRIPE_SCALE_PRICE_ID: z.string().optional(),
   TURNSTILE_SECRET_KEY: z.string().optional(),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  EMAIL_REPLY_TO: z.string().optional(),
+  SENTRY_DSN: z.string().optional(),
 });
 
 export const env = schema.parse({
@@ -36,6 +40,10 @@ export const env = schema.parse({
   STRIPE_SCALE_PRICE_ID: process.env.STRIPE_SCALE_PRICE_ID,
   TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  EMAIL_FROM: process.env.EMAIL_FROM,
+  EMAIL_REPLY_TO: process.env.EMAIL_REPLY_TO,
+  SENTRY_DSN: process.env.SENTRY_DSN,
 });
 
 export const s3Configured =
