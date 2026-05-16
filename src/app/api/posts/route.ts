@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { authenticate, requireScope } from "@/lib/api/auth-guard";
 import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
 import { checkDailyPostLimit } from "@/lib/api/abuse";
+import { bumpUsage, checkPostQuota, requireFeature } from "@/lib/billing/service";
 import { ok, fail } from "@/lib/api/response";
 import { PostCreate, PostListQuery } from "@/lib/posts/schema";
 import { createPost, listPosts } from "@/lib/posts/service";
@@ -52,10 +53,26 @@ export async function POST(req: NextRequest) {
     return fail("daily_limit_exceeded", `Author capped at ${limit.cap} posts per day`, 429, { used: limit.used });
   }
 
+  const quota = await checkPostQuota(auth.user.id);
+  if (!quota.ok) {
+    return fail("plan_quota_exceeded", quota.reason, 402, { limit: quota.limit, used: quota.used });
+  }
+
+  if (parsed.data.publishAt) {
+    const feat = await requireFeature(auth.user.id, "scheduledPublishing");
+    if (!feat.ok) return fail("plan_feature_required", feat.reason, 402);
+  }
+
   const post = await createPost({
     authorId: auth.user.id,
     apiKeyId: auth.kind === "api_key" ? auth.key.id : null,
     input: parsed.data,
+  });
+
+  await bumpUsage({
+    userId: auth.user.id,
+    postsCreated: 1,
+    postsPublished: post.status === "published" ? 1 : 0,
   });
 
   const body = { post };

@@ -11,6 +11,10 @@ const schema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_BUCKET: z.string().optional(),
   S3_PUBLIC_BASE_URL: z.string().url().optional(),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRO_PRICE_ID: z.string().optional(),
+  STRIPE_SCALE_PRICE_ID: z.string().optional(),
 });
 
 export const env = schema.parse({
@@ -24,6 +28,10 @@ export const env = schema.parse({
   S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
   S3_BUCKET: process.env.S3_BUCKET,
   S3_PUBLIC_BASE_URL: process.env.S3_PUBLIC_BASE_URL,
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+  STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID,
+  STRIPE_SCALE_PRICE_ID: process.env.STRIPE_SCALE_PRICE_ID,
 });
 
 export const s3Configured =
