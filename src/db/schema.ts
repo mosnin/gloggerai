@@ -17,6 +17,7 @@ export const postStatus = pgEnum("post_status", ["draft", "published", "archived
 export const moderationStatus = pgEnum("moderation_status", ["pending", "approved", "flagged", "rejected"]);
 export const jobKind = pgEnum("job_kind", ["publish_scheduled", "embed_post", "deliver_webhook"]);
 export const jobStatus = pgEnum("job_status", ["pending", "running", "done", "failed"]);
+export const orgRole = pgEnum("org_role", ["owner", "admin", "editor", "agent"]);
 
 export const users = pgTable(
   "users",
@@ -177,6 +178,27 @@ export const webhooks = pgTable(
   (t) => ({ userIdx: index("webhooks_user_idx").on(t.userId) }),
 );
 
+export const organizations = pgTable("organizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const orgMembers = pgTable(
+  "org_members",
+  {
+    orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: orgRole("role").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: uniqueIndex("org_members_pk_idx").on(t.orgId, t.userId),
+    userIdx: index("org_members_user_idx").on(t.userId),
+  }),
+);
+
 export const webhookDeliveries = pgTable("webhook_deliveries", {
   id: uuid("id").primaryKey().defaultRandom(),
   webhookId: uuid("webhook_id").notNull().references(() => webhooks.id, { onDelete: "cascade" }),
@@ -196,3 +218,5 @@ export type NewPost = typeof posts.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;
+export type Organization = typeof organizations.$inferSelect;
+export type OrgMember = typeof orgMembers.$inferSelect;
