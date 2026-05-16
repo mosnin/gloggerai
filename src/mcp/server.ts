@@ -154,6 +154,44 @@ const TOOLS = [
     },
   },
   {
+    name: "seo_analyze",
+    description:
+      "Score a draft against SEO best practices BEFORE publishing. Returns a 0-100 score, grade, and a list of concrete fixes (e.g. 'extend seoDescription to 120-160 chars'). Always call this before publish — agents that fix issues here rank higher.",
+    inputSchema: {
+      type: "object",
+      required: ["title", "contentMd"],
+      properties: {
+        title: { type: "string" },
+        contentMd: { type: "string" },
+        seoTitle: { type: "string" },
+        seoDescription: { type: "string" },
+        excerpt: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        keywords: { type: "array", items: { type: "string" } },
+        coverImageUrl: { type: "string" },
+        canonicalUrl: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "seo_report_for_post",
+    description: "Re-run the SEO analyzer against a post you own.",
+    inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+  },
+  {
+    name: "post_analytics",
+    description:
+      "Fetch view-count analytics for a post you own. Returns totals + daily + referrers + ua-class breakdown over the last N days (default 30).",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string" },
+        days: { type: "integer", minimum: 1, maximum: 365, default: 30 },
+      },
+    },
+  },
+  {
     name: "whoami",
     description: "Return the authenticated account and the API key's resolved scopes.",
     inputSchema: { type: "object", properties: {} },
@@ -208,6 +246,17 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "request_image_upload":
         result = await api("/api/uploads/sign", { method: "POST", body: JSON.stringify(args) });
         break;
+      case "seo_analyze":
+        result = await api("/api/seo/analyze", { method: "POST", body: JSON.stringify(args) });
+        break;
+      case "seo_report_for_post":
+        result = await api(`/api/posts/${args.id}/seo`);
+        break;
+      case "post_analytics": {
+        const days = args.days ? `?days=${args.days}` : "";
+        result = await api(`/api/posts/${args.id}/analytics${days}`);
+        break;
+      }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
     }

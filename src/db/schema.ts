@@ -220,3 +220,14 @@ export type Job = typeof jobs.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type OrgMember = typeof orgMembers.$inferSelect;
+
+export const postViews = pgTable("post_views", {
+  id: integer("id").primaryKey(),
+  postId: uuid("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  referrerHost: text("referrer_host"),
+  country: text("country"),
+  uaClass: text("ua_class"),
+  isBot: boolean("is_bot").notNull().default(false),
+  sessionHash: text("session_hash"),
+});

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getPost, incrementViewCount } from "@/lib/posts/service";
+import { getPost } from "@/lib/posts/service";
 import { relatedPostsByEmbedding } from "@/lib/embeddings/service";
 import { ArticleBody } from "@/lib/mdx/render";
 import { env } from "@/lib/env";
@@ -49,7 +49,6 @@ export default async function PostPage({ params }: Props) {
   const row = await resolve(params);
   if (!row || row.post.status !== "published") notFound();
   const { post, author } = row;
-  void incrementViewCount(post.id);
   const related = await relatedPostsByEmbedding(post.id, 4).catch(() => []);
 
   const jsonLd = {
@@ -115,6 +114,12 @@ export default async function PostPage({ params }: Props) {
           ))}
         </footer>
       ) : null}
+
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `fetch('/api/posts/${post.id}/view',{method:'POST',keepalive:true}).catch(()=>{})`,
+        }}
+      />
 
       {related.length ? (
         <section className="mt-16 border-t border-neutral-200 pt-8">
