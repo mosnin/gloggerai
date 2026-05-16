@@ -5,10 +5,16 @@ import { posts, users, type Post } from "@/db/schema";
 import { excerptFromMarkdown, slug as slugify, wordCount } from "@/lib/utils";
 import { moderateContent } from "./moderation";
 import { upsertPostEmbedding } from "@/lib/embeddings/service";
+import { enqueue } from "@/lib/jobs/queue";
+import { fanOutEvent } from "@/lib/jobs/handlers";
 import type { PostCreateInput, PostUpdateInput } from "./schema";
 
 function scheduleEmbedding(postId: string, title: string, body: string): void {
   void upsertPostEmbedding({ postId, title, body }).catch(() => {});
+}
+
+function announce(event: string, userId: string, data: Record<string, unknown>): void {
+  void fanOutEvent({ event, userId, data }).catch(() => {});
 }
 
 async function uniqueSlug(authorId: string, seed: string, ignoreId?: string): Promise<string> {
@@ -34,7 +40,14 @@ export async function createPost(opts: {
   const slug = input.slug ?? (await uniqueSlug(authorId, input.title));
   const minutes = Math.max(1, Math.round(readingTime(input.contentMd).minutes));
   const moderation = await moderateContent(input.title, input.contentMd);
-  const finalStatus = input.status === "published" && moderation.status !== "rejected" ? "published" : "draft";
+  const scheduled = input.publishAt ? new Date(input.publishAt) : null;
+  const isScheduled = !!scheduled && scheduled > new Date();
+  const finalStatus =
+    isScheduled
+      ? "draft"
+      : input.status === "published" && moderation.status !== "rejected"
+        ? "published"
+        : "draft";
 
   const [row] = await db
     .insert(posts)
@@ -57,11 +70,22 @@ export async function createPost(opts: {
       readingTimeMinutes: minutes,
       wordCount: wordCount(input.contentMd),
       publishedAt: finalStatus === "published" ? new Date() : null,
+      publishAt: isScheduled ? scheduled : null,
       createdByApiKeyId: apiKeyId ?? null,
     })
     .returning();
 
-  if (finalStatus === "published") scheduleEmbedding(row.id, row.title, row.contentMd);
+  if (isScheduled && scheduled) {
+    await enqueue({
+      kind: "publish_scheduled",
+      payload: { postId: row.id },
+      runAt: scheduled,
+    });
+  }
+  if (finalStatus === "published") {
+    scheduleEmbedding(row.id, row.title, row.contentMd);
+    announce("post.published", row.authorId, { postId: row.id, slug: row.slug });
+  }
   return row;
 }
 
@@ -115,7 +139,11 @@ export async function updatePost(opts: {
   }
 
   const [updated] = await db.update(posts).set(patch).where(eq(posts.id, postId)).returning();
-  if (updated.status === "published") scheduleEmbedding(updated.id, updated.title, updated.contentMd);
+  if (updated.status === "published") {
+    scheduleEmbedding(updated.id, updated.title, updated.contentMd);
+    const event = current.status === "published" ? "post.updated" : "post.published";
+    announce(event, updated.authorId, { postId: updated.id, slug: updated.slug });
+  }
   return updated;
 }
 
@@ -124,6 +152,7 @@ export async function deletePost(postId: string, authorId: string): Promise<bool
     .delete(posts)
     .where(and(eq(posts.id, postId), eq(posts.authorId, authorId)))
     .returning({ id: posts.id });
+  if (res.length) announce("post.deleted", authorId, { postId });
   return res.length > 0;
 }
 

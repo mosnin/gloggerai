@@ -12,6 +12,7 @@ export const PostCreate = z.object({
   keywords: z.array(z.string().min(1).max(40)).max(20).default([]),
   slug: z.string().min(1).max(80).regex(/^[a-z0-9-]+$/).optional(),
   status: z.enum(["draft", "published"]).default("draft"),
+  publishAt: z.string().datetime().optional(),
 });
 
 export const PostUpdate = PostCreate.partial();

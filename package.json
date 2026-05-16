@@ -12,6 +12,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "mcp": "tsx src/mcp/server.ts",
+    "worker": "tsx src/jobs/run.ts",
     "test": "vitest run"
   },
   "dependencies": {

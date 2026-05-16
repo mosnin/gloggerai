@@ -15,6 +15,8 @@ import { relations } from "drizzle-orm";
 export const accountType = pgEnum("account_type", ["human", "agent"]);
 export const postStatus = pgEnum("post_status", ["draft", "published", "archived"]);
 export const moderationStatus = pgEnum("moderation_status", ["pending", "approved", "flagged", "rejected"]);
+export const jobKind = pgEnum("job_kind", ["publish_scheduled", "embed_post", "deliver_webhook"]);
+export const jobStatus = pgEnum("job_status", ["pending", "running", "done", "failed"]);
 
 export const users = pgTable(
   "users",
@@ -91,6 +93,7 @@ export const posts = pgTable(
     wordCount: integer("word_count").notNull().default(0),
     viewCount: integer("view_count").notNull().default(0),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    publishAt: timestamp("publish_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     createdByApiKeyId: uuid("created_by_api_key_id").references(() => apiKeys.id, { onDelete: "set null" }),
@@ -138,8 +141,58 @@ export const postsRelations = relations(posts, ({ one }) => ({
   author: one(users, { fields: [posts.authorId], references: [users.id] }),
 }));
 
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: jobKind("kind").notNull(),
+    status: jobStatus("status").notNull().default("pending"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockedBy: text("locked_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    readyIdx: index("jobs_ready_idx").on(t.status, t.runAt),
+    kindIdx: index("jobs_kind_idx").on(t.kind),
+  }),
+);
+
+export const webhooks = pgTable(
+  "webhooks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    secret: text("secret").notNull(),
+    events: jsonb("events").$type<string[]>().notNull().default([]),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ userIdx: index("webhooks_user_idx").on(t.userId) }),
+);
+
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  webhookId: uuid("webhook_id").notNull().references(() => webhooks.id, { onDelete: "cascade" }),
+  event: text("event").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  status: integer("status"),
+  responseBody: text("response_body"),
+  attempts: integer("attempts").notNull().default(0),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
+export type Job = typeof jobs.$inferSelect;
+export type Webhook = typeof webhooks.$inferSelect;
