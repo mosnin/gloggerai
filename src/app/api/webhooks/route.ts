@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { webhooks } from "@/db/schema";
 import { authenticate } from "@/lib/api/auth-guard";
 import { requireCsrf } from "@/lib/api/csrf";
+import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
 import { fail, ok } from "@/lib/api/response";
 
 const KNOWN_EVENTS = ["post.published", "post.updated", "post.deleted"] as const;
@@ -37,6 +38,10 @@ export async function POST(req: NextRequest) {
   if (auth instanceof Response) return auth;
   const csrf = await requireCsrf(req);
   if (csrf) return csrf;
+  const apiKeyId = auth.kind === "api_key" ? auth.key.id : null;
+  const idemp = await checkIdempotency(req, apiKeyId);
+  if (idemp.cached) return idemp.cached;
+
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());
   const secret = `whsec_${randomBytes(24).toString("base64url")}`;
@@ -44,17 +49,16 @@ export async function POST(req: NextRequest) {
     .insert(webhooks)
     .values({ userId: auth.user.id, url: parsed.data.url, events: parsed.data.events, secret })
     .returning();
-  return ok(
-    {
-      id: row.id,
-      url: row.url,
-      events: row.events,
-      active: row.active,
-      secret,
-      warning: "Save the signing secret now — it won't be shown again.",
-    },
-    { status: 201 },
-  );
+  const body = {
+    id: row.id,
+    url: row.url,
+    events: row.events,
+    active: row.active,
+    secret,
+    warning: "Save the signing secret now — it won't be shown again.",
+  };
+  if (idemp.key && apiKeyId) await storeIdempotent(idemp.key, apiKeyId, "POST", "/api/webhooks", 201, body);
+  return ok(body, { status: 201 });
 }
 
 export async function DELETE(req: NextRequest) {

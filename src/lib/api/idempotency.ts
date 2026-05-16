@@ -3,9 +3,17 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { idempotencyKeys } from "@/db/schema";
 
-export async function checkIdempotency(req: NextRequest, apiKeyId: string | null) {
+export async function checkIdempotency(
+  reqOrKey: NextRequest | string | null,
+  apiKeyId: string | null,
+) {
   if (!apiKeyId) return { key: null, cached: null };
-  const key = req.headers.get("idempotency-key");
+  const key =
+    typeof reqOrKey === "string"
+      ? reqOrKey
+      : reqOrKey
+        ? reqOrKey.headers.get("idempotency-key")
+        : null;
   if (!key) return { key: null, cached: null };
   const [hit] = await db.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, key)).limit(1);
   if (!hit) return { key, cached: null };

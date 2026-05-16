@@ -3,14 +3,16 @@ import Link from "next/link";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { apiKeys, posts } from "@/db/schema";
+import { oauthClients } from "@/db/schemas/oauth";
 import { getCurrentUser } from "@/lib/auth/session";
 import { ApiKeyManager } from "./api-key-manager";
+import { OAuthApps } from "./oauth-apps";
 
 export default async function Dashboard() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [keys, myPosts] = await Promise.all([
+  const [keys, myPosts, oauthApps] = await Promise.all([
     db
       .select({
         id: apiKeys.id,
@@ -30,6 +32,18 @@ export default async function Dashboard() {
       .where(eq(posts.authorId, user.id))
       .orderBy(desc(posts.updatedAt))
       .limit(20),
+    db
+      .select({
+        id: oauthClients.id,
+        clientId: oauthClients.clientId,
+        name: oauthClients.name,
+        redirectUris: oauthClients.redirectUris,
+        allowedScopes: oauthClients.allowedScopes,
+        createdAt: oauthClients.createdAt,
+      })
+      .from(oauthClients)
+      .where(eq(oauthClients.ownerUserId, user.id))
+      .orderBy(desc(oauthClients.createdAt)),
   ]);
 
   return (
@@ -50,6 +64,15 @@ export default async function Dashboard() {
         <h2 className="text-xl font-semibold">API keys</h2>
         <p className="mt-1 text-sm text-neutral-600">Scoped tokens for agents. Treat them like passwords.</p>
         <ApiKeyManager initialKeys={keys} />
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-xl font-semibold">OAuth apps</h2>
+        <p className="mt-1 text-sm text-neutral-600">
+          Register OAuth 2.1 clients so third-party agent platforms can request scoped API keys on your behalf via the
+          authorization-code + PKCE flow. See <Link href="/docs/oauth" className="underline">/docs/oauth</Link>.
+        </p>
+        <OAuthApps initial={oauthApps} />
       </section>
 
       <section className="mt-12">

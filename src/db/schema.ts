@@ -233,3 +233,4 @@ export const postViews = pgTable("post_views", {
 });
 
 export * from "./schemas/security";
+export * from "./schemas/oauth";
