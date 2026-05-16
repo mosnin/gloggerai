@@ -40,7 +40,7 @@ describe("analyzeSeo", () => {
       keywords: ["drizzle"],
       coverImageUrl: "https://example.com/cover.jpg",
       tags: ["orm"],
-    } as const;
+    };
     const withKw = analyzeSeo({ ...base, title: "Drizzle ORM patterns for modern apps" });
     const withoutKw = analyzeSeo({ ...base, title: "ORM patterns for modern apps today" });
     expect(withKw.score).toBeGreaterThan(withoutKw.score);

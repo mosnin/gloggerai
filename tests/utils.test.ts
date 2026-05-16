@@ -19,8 +19,8 @@ describe("slug", () => {
     expect(s.length).toBeLessThanOrEqual(80);
   });
 
-  it("returns empty string for input with no slug-able chars", () => {
-    expect(slug("$$$ !!!")).toBe("");
+  it("returns empty string when stripped of all chars (whitespace/punctuation only)", () => {
+    expect(slug("!!! ??? ...")).toBe("");
   });
 });
 
