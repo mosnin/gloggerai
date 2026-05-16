@@ -11,13 +11,9 @@ import {
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+import { accountType, postStatus, moderationStatus, jobKind, jobStatus, orgRole } from "./schemas/enums";
 
-export const accountType = pgEnum("account_type", ["human", "agent"]);
-export const postStatus = pgEnum("post_status", ["draft", "published", "archived"]);
-export const moderationStatus = pgEnum("moderation_status", ["pending", "approved", "flagged", "rejected"]);
-export const jobKind = pgEnum("job_kind", ["publish_scheduled", "embed_post", "deliver_webhook"]);
-export const jobStatus = pgEnum("job_status", ["pending", "running", "done", "failed"]);
-export const orgRole = pgEnum("org_role", ["owner", "admin", "editor", "agent"]);
+export { accountType, postStatus, moderationStatus, jobKind, jobStatus, orgRole };
 
 export const users = pgTable(
   "users",
@@ -235,3 +231,4 @@ export const postViews = pgTable("post_views", {
 export * from "./schemas/security";
 export * from "./schemas/oauth";
 export * from "./schemas/engagement";
+export * from "./schemas/content";

@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { posts, users, type Post } from "@/db/schema";
 import { excerptFromMarkdown, slug as slugify, wordCount } from "@/lib/utils";
 import { moderateContent } from "./moderation";
+import { snapshotRevision, getRevision } from "./revisions";
 import { upsertPostEmbedding } from "@/lib/embeddings/service";
 import { enqueue } from "@/lib/jobs/queue";
 import { fanOutEvent } from "@/lib/jobs/handlers";
@@ -98,15 +99,18 @@ export async function createPost(opts: {
 export async function updatePost(opts: {
   postId: string;
   authorId: string;
+  apiKeyId?: string | null;
   input: PostUpdateInput;
 }): Promise<Post | null> {
-  const { postId, authorId, input } = opts;
+  const { postId, authorId, input, apiKeyId } = opts;
   const [current] = await db
     .select()
     .from(posts)
     .where(and(eq(posts.id, postId), eq(posts.authorId, authorId)))
     .limit(1);
   if (!current) return null;
+
+  await snapshotRevision({ post: current, editedByUserId: authorId, editedByApiKeyId: apiKeyId ?? null });
 
   const patch: Partial<Post> = { updatedAt: new Date() };
   if (input.title !== undefined) patch.title = input.title;
@@ -153,6 +157,44 @@ export async function updatePost(opts: {
       announcePublish({ id: updated.id, authorId: updated.authorId, tags: updated.tags });
     }
   }
+  return updated;
+}
+
+export async function restorePostFromRevision(opts: {
+  postId: string;
+  authorId: string;
+  revisionNumber: number;
+  apiKeyId?: string | null;
+}): Promise<Post | null> {
+  const { postId, authorId, revisionNumber, apiKeyId } = opts;
+  const [current] = await db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.id, postId), eq(posts.authorId, authorId)))
+    .limit(1);
+  if (!current) return null;
+  const rev = await getRevision(postId, revisionNumber);
+  if (!rev) return null;
+
+  await snapshotRevision({ post: current, editedByUserId: authorId, editedByApiKeyId: apiKeyId ?? null });
+
+  const patch: Partial<Post> = {
+    title: rev.title,
+    subtitle: rev.subtitle,
+    contentMd: rev.contentMd,
+    excerpt: excerptFromMarkdown(rev.contentMd),
+    tags: rev.tags,
+    keywords: rev.keywords,
+    seoTitle: rev.seoTitle,
+    seoDescription: rev.seoDescription,
+    coverImageUrl: rev.coverImageUrl,
+    readingTimeMinutes: Math.max(1, Math.round(readingTime(rev.contentMd).minutes)),
+    wordCount: wordCount(rev.contentMd),
+    updatedAt: new Date(),
+  };
+
+  const [updated] = await db.update(posts).set(patch).where(eq(posts.id, postId)).returning();
+  if (updated.status === "published") scheduleEmbedding(updated.id, updated.title, updated.contentMd);
   return updated;
 }
 

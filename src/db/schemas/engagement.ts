@@ -9,7 +9,8 @@ import {
   uniqueIndex,
   primaryKey,
 } from "drizzle-orm/pg-core";
-import { posts, users, moderationStatus } from "../schema";
+import { posts, users } from "../schema";
+import { moderationStatus } from "./enums";
 
 export const comments = pgTable(
   "comments",
