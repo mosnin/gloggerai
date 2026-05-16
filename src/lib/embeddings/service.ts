@@ -40,10 +40,43 @@ export type SemanticHit = {
   title: string;
   subtitle: string | null;
   excerpt: string | null;
+  tags: string[];
+  readingTimeMinutes: number;
+  publishedAt: string | Date | null;
   authorHandle: string;
   authorDisplayName: string;
   similarity: number;
 };
+
+type SemanticRow = {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  excerpt: string | null;
+  tags: string[] | null;
+  readingTimeMinutes: number;
+  publishedAt: string | Date | null;
+  authorHandle: string;
+  authorDisplayName: string;
+  similarity: number | string;
+};
+
+function normalizeHit(r: SemanticRow): SemanticHit {
+  return {
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    subtitle: r.subtitle,
+    excerpt: r.excerpt,
+    tags: r.tags ?? [],
+    readingTimeMinutes: r.readingTimeMinutes,
+    publishedAt: r.publishedAt,
+    authorHandle: r.authorHandle,
+    authorDisplayName: r.authorDisplayName,
+    similarity: typeof r.similarity === "string" ? Number(r.similarity) : r.similarity,
+  };
+}
 
 export async function semanticSearch(opts: {
   query: string;
@@ -56,7 +89,9 @@ export async function semanticSearch(opts: {
   const exclude = opts.excludePostId ?? "00000000-0000-0000-0000-000000000000";
   const res = await db.execute(sql`
     SELECT
-      p.id, p.slug, p.title, p.subtitle, p.excerpt,
+      p.id, p.slug, p.title, p.subtitle, p.excerpt, p.tags,
+      p.reading_time_minutes AS "readingTimeMinutes",
+      p.published_at AS "publishedAt",
       u.handle AS "authorHandle",
       u.display_name AS "authorDisplayName",
       1 - (e.embedding <=> ${lit}::vector) AS similarity
@@ -68,7 +103,7 @@ export async function semanticSearch(opts: {
     ORDER BY e.embedding <=> ${lit}::vector
     LIMIT ${opts.limit}
   `);
-  return res.rows as unknown as SemanticHit[];
+  return (res.rows as unknown as SemanticRow[]).map(normalizeHit);
 }
 
 export async function relatedPostsByEmbedding(postId: string, limit = 5): Promise<SemanticHit[]> {
@@ -77,7 +112,9 @@ export async function relatedPostsByEmbedding(postId: string, limit = 5): Promis
       SELECT embedding FROM post_embeddings WHERE post_id = ${postId} LIMIT 1
     )
     SELECT
-      p.id, p.slug, p.title, p.subtitle, p.excerpt,
+      p.id, p.slug, p.title, p.subtitle, p.excerpt, p.tags,
+      p.reading_time_minutes AS "readingTimeMinutes",
+      p.published_at AS "publishedAt",
       u.handle AS "authorHandle",
       u.display_name AS "authorDisplayName",
       1 - (e.embedding <=> (SELECT embedding FROM src)) AS similarity
@@ -89,5 +126,5 @@ export async function relatedPostsByEmbedding(postId: string, limit = 5): Promis
     ORDER BY e.embedding <=> (SELECT embedding FROM src)
     LIMIT ${limit}
   `);
-  return res.rows as unknown as SemanticHit[];
+  return (res.rows as unknown as SemanticRow[]).map(normalizeHit);
 }

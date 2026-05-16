@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { claimJobs, completeJob, failJob } from "./queue";
 import { handleDeliverWebhook, handleEmbedPost, handlePublishScheduled } from "./handlers";
+import { log } from "@/lib/observability/logger";
 
 const WORKER_ID = `worker-${process.pid}-${randomUUID().slice(0, 8)}`;
 const BATCH = 10;
@@ -23,8 +24,18 @@ async function tick() {
           break;
       }
       await completeJob(job.id);
+      log.info("job.completed", { workerId: WORKER_ID, jobId: job.id, kind: job.kind, attempts });
     } catch (err) {
-      await failJob(job.id, err instanceof Error ? err.message : String(err), attempts, job.maxAttempts);
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("job.failed", {
+        workerId: WORKER_ID,
+        jobId: job.id,
+        kind: job.kind,
+        attempts,
+        maxAttempts: job.maxAttempts,
+        error: message,
+      });
+      await failJob(job.id, message, attempts, job.maxAttempts);
     }
   }
   return claimed.length;
@@ -33,11 +44,14 @@ async function tick() {
 /** Run the worker forever. Sleeps when no work. */
 export async function runWorker(opts: { intervalMs?: number } = {}): Promise<void> {
   const interval = opts.intervalMs ?? 2_000;
-  console.log(`[jobs] starting ${WORKER_ID}`);
+  log.info("jobs.worker_started", { workerId: WORKER_ID, intervalMs: interval, batch: BATCH });
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const n = await tick().catch((err) => {
-      console.error("[jobs] tick error", err);
+      log.error("jobs.tick_error", {
+        workerId: WORKER_ID,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return 0;
     });
     if (n === 0) await new Promise((r) => setTimeout(r, interval));

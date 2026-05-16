@@ -255,9 +255,3 @@ export async function getPost(opts: { id?: string; authorHandle?: string; slug?:
   return row ?? null;
 }
 
-export async function incrementViewCount(postId: string): Promise<void> {
-  await db
-    .update(posts)
-    .set({ viewCount: sql`${posts.viewCount} + 1` })
-    .where(eq(posts.id, postId));
-}

@@ -18,6 +18,18 @@ export async function GET(req: NextRequest) {
   if (auth instanceof Response) return auth;
   const feat = await requireFeature(auth.user.id, "semanticSearch");
   if (!feat.ok) return fail("plan_feature_required", feat.reason, 402);
-  const items = await semanticSearch({ query: parsed.data.q, limit: parsed.data.limit });
+  const hits = await semanticSearch({ query: parsed.data.q, limit: parsed.data.limit });
+  const items = hits.map((h) => ({
+    id: h.id,
+    slug: h.slug,
+    title: h.title,
+    subtitle: h.subtitle,
+    excerpt: h.excerpt,
+    tags: h.tags,
+    readingTimeMinutes: h.readingTimeMinutes,
+    publishedAt: h.publishedAt,
+    author: { handle: h.authorHandle, displayName: h.authorDisplayName },
+    similarity: h.similarity,
+  }));
   return ok({ query: parsed.data.q, items });
 }

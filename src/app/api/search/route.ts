@@ -9,6 +9,20 @@ const Q = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+type FtsRow = {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  excerpt: string | null;
+  tags: string[] | null;
+  readingTimeMinutes: number;
+  publishedAt: string | Date | null;
+  authorHandle: string;
+  authorDisplayName: string;
+  rank: number;
+};
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const parsed = Q.safeParse(Object.fromEntries(url.searchParams));
@@ -31,5 +45,18 @@ export async function GET(req: NextRequest) {
     LIMIT ${limit}
   `);
 
-  return ok({ query: q, items: rows.rows });
+  const items = (rows.rows as unknown as FtsRow[]).map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    subtitle: r.subtitle,
+    excerpt: r.excerpt,
+    tags: r.tags ?? [],
+    readingTimeMinutes: r.readingTimeMinutes,
+    publishedAt: r.publishedAt,
+    author: { handle: r.authorHandle, displayName: r.authorDisplayName },
+    rank: Number(r.rank),
+  }));
+
+  return ok({ query: q, items });
 }

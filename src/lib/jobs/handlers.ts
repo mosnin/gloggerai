@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { posts, webhooks, webhookDeliveries } from "@/db/schema";
 import { moderateContent } from "@/lib/posts/moderation";
 import { upsertPostEmbedding } from "@/lib/embeddings/service";
+import { log } from "@/lib/observability/logger";
 
 export async function handlePublishScheduled(payload: { postId: string }): Promise<void> {
   const [post] = await db.select().from(posts).where(eq(posts.id, payload.postId)).limit(1);
@@ -66,7 +67,16 @@ export async function handleDeliverWebhook(payload: { deliveryId: string }): Pro
       deliveredAt: res.ok ? new Date() : null,
     })
     .where(eq(webhookDeliveries.id, delivery.id));
-  if (!res.ok) throw new Error(`webhook ${res.status}: ${txt.slice(0, 200)}`);
+  if (!res.ok) {
+    log.warn("webhook.delivery_failed", {
+      deliveryId: delivery.id,
+      webhookId: hook.id,
+      url: hook.url,
+      status: res.status,
+      attempts: delivery.attempts + 1,
+    });
+    throw new Error(`webhook ${res.status}: ${txt.slice(0, 200)}`);
+  }
 }
 
 export async function fanOutEvent(opts: {

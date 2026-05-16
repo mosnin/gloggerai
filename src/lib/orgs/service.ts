@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orgMembers, organizations, users, type Organization } from "@/db/schema";
@@ -69,7 +70,7 @@ export async function createAgentIdentity(opts: {
   const [user] = await db
     .insert(users)
     .values({
-      email: `${handle}+agent@gloggerai.local`,
+      email: `agent-${randomUUID()}@agent.gloggerai.local`,
       handle,
       displayName: opts.displayName,
       bio: opts.bio,
