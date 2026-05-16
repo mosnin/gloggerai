@@ -5,6 +5,7 @@ import { posts, webhooks, webhookDeliveries } from "@/db/schema";
 import { moderateContent } from "@/lib/posts/moderation";
 import { upsertPostEmbedding } from "@/lib/embeddings/service";
 import { log } from "@/lib/observability/logger";
+import { notifyPostPublished } from "@/lib/engagement/notifications";
 
 export async function handlePublishScheduled(payload: { postId: string }): Promise<void> {
   const [post] = await db.select().from(posts).where(eq(posts.id, payload.postId)).limit(1);
@@ -26,6 +27,7 @@ export async function handlePublishScheduled(payload: { postId: string }): Promi
   if (status === "published") {
     await upsertPostEmbedding({ postId: post.id, title: post.title, body: post.contentMd }).catch(() => {});
     await fanOutEvent({ userId: post.authorId, event: "post.published", data: { postId: post.id, slug: post.slug } });
+    await notifyPostPublished({ postId: post.id, authorId: post.authorId, tags: post.tags }).catch(() => {});
   }
 }
 

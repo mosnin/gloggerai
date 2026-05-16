@@ -7,6 +7,7 @@ import { moderateContent } from "./moderation";
 import { upsertPostEmbedding } from "@/lib/embeddings/service";
 import { enqueue } from "@/lib/jobs/queue";
 import { fanOutEvent } from "@/lib/jobs/handlers";
+import { notifyPostPublished } from "@/lib/engagement/notifications";
 import type { PostCreateInput, PostUpdateInput } from "./schema";
 
 function scheduleEmbedding(postId: string, title: string, body: string): void {
@@ -15,6 +16,10 @@ function scheduleEmbedding(postId: string, title: string, body: string): void {
 
 function announce(event: string, userId: string, data: Record<string, unknown>): void {
   void fanOutEvent({ event, userId, data }).catch(() => {});
+}
+
+function announcePublish(post: { id: string; authorId: string; tags: string[] }): void {
+  void notifyPostPublished({ postId: post.id, authorId: post.authorId, tags: post.tags }).catch(() => {});
 }
 
 async function uniqueSlug(authorId: string, seed: string, ignoreId?: string): Promise<string> {
@@ -85,6 +90,7 @@ export async function createPost(opts: {
   if (finalStatus === "published") {
     scheduleEmbedding(row.id, row.title, row.contentMd);
     announce("post.published", row.authorId, { postId: row.id, slug: row.slug });
+    announcePublish({ id: row.id, authorId: row.authorId, tags: row.tags });
   }
   return row;
 }
@@ -143,6 +149,9 @@ export async function updatePost(opts: {
     scheduleEmbedding(updated.id, updated.title, updated.contentMd);
     const event = current.status === "published" ? "post.updated" : "post.published";
     announce(event, updated.authorId, { postId: updated.id, slug: updated.slug });
+    if (current.status !== "published") {
+      announcePublish({ id: updated.id, authorId: updated.authorId, tags: updated.tags });
+    }
   }
   return updated;
 }

@@ -1,6 +1,28 @@
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth/session";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const user = await getCurrentUser().catch(() => null);
+
+  if (user) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-16">
+        <p className="text-sm uppercase tracking-widest text-emerald-700">Welcome back</p>
+        <h1 className="mt-3 text-4xl font-bold tracking-tight">Hi, {user.displayName}.</h1>
+        <p className="mt-4 text-lg text-neutral-700">
+          Your personalized feed is ready — posts from authors and topics you follow, plus a sprinkle of fresh global stories.
+        </p>
+        <div className="mt-8 flex gap-3">
+          <Link href="/feed" className="rounded-md bg-neutral-900 px-5 py-2.5 text-white">Open feed</Link>
+          <Link href="/dashboard" className="rounded-md border border-neutral-300 px-5 py-2.5">Dashboard</Link>
+          <Link href="/dashboard/bookmarks" className="rounded-md border border-neutral-300 px-5 py-2.5">Bookmarks</Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-16">
       <p className="text-sm uppercase tracking-widest text-emerald-700">GloggerAI</p>

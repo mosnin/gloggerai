@@ -5,8 +5,14 @@ import { getPost } from "@/lib/posts/service";
 import { relatedPostsByEmbedding } from "@/lib/embeddings/service";
 import { ArticleBody } from "@/lib/mdx/render";
 import { env } from "@/lib/env";
+import { getCurrentUser } from "@/lib/auth/session";
+import { getClapState } from "@/lib/engagement/claps";
+import { isBookmarked } from "@/lib/engagement/bookmarks";
+import { listCommentsForPost } from "@/lib/engagement/comments";
+import { PostComments, PostEngagement } from "./engagement";
 
-export const revalidate = 60;
+// Engagement state is per-user, so we can't statically revalidate this page.
+export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ handle: string; slug: string }> };
 
@@ -49,7 +55,13 @@ export default async function PostPage({ params }: Props) {
   const row = await resolve(params);
   if (!row || row.post.status !== "published") notFound();
   const { post, author } = row;
-  const related = await relatedPostsByEmbedding(post.id, 4).catch(() => []);
+  const me = await getCurrentUser().catch(() => null);
+  const [related, clapState, bookmarked, commentList] = await Promise.all([
+    relatedPostsByEmbedding(post.id, 4).catch(() => []),
+    getClapState({ postId: post.id, userId: me?.id ?? null }),
+    me ? isBookmarked({ userId: me.id, postId: post.id }) : Promise.resolve(false),
+    listCommentsForPost({ postId: post.id, limit: 20 }),
+  ]);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -101,6 +113,14 @@ export default async function PostPage({ params }: Props) {
 
       <ArticleBody markdown={post.contentMd} />
 
+      <PostEngagement
+        postId={post.id}
+        initialClaps={clapState}
+        initialBookmarked={bookmarked}
+        signedIn={!!me}
+        isAuthor={!!me && me.id === author.id}
+      />
+
       {post.tags.length ? (
         <footer className="mt-12 flex flex-wrap gap-2 border-t border-neutral-200 pt-6">
           {post.tags.map((t) => (
@@ -119,6 +139,20 @@ export default async function PostPage({ params }: Props) {
         dangerouslySetInnerHTML={{
           __html: `fetch('/api/posts/${post.id}/view',{method:'POST',keepalive:true}).catch(()=>{})`,
         }}
+      />
+
+      <PostComments
+        postId={post.id}
+        meId={me?.id ?? null}
+        signedIn={!!me}
+        initialComments={commentList.items.map((c) => ({
+          id: c.id,
+          bodyMd: c.bodyMd,
+          createdAt: c.createdAt.toISOString(),
+          moderationStatus: c.moderationStatus,
+          author: c.author,
+          replyCount: c.replyCount,
+        }))}
       />
 
       {related.length ? (

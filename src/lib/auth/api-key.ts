@@ -10,6 +10,7 @@ export const ALL_SCOPES = [
   "posts:delete",
   "profile:read",
   "profile:write",
+  "comments:write",
 ] as const;
 export type Scope = (typeof ALL_SCOPES)[number];
 

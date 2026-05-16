@@ -5,14 +5,17 @@ import { db } from "@/db/client";
 import { apiKeys, posts } from "@/db/schema";
 import { oauthClients } from "@/db/schemas/oauth";
 import { getCurrentUser } from "@/lib/auth/session";
+import { unreadCount, listNotifications } from "@/lib/engagement/notifications";
 import { ApiKeyManager } from "./api-key-manager";
 import { OAuthApps } from "./oauth-apps";
+
+export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [keys, myPosts, oauthApps] = await Promise.all([
+  const [keys, myPosts, oauthApps, unread, recentNotifications] = await Promise.all([
     db
       .select({
         id: apiKeys.id,
@@ -44,6 +47,8 @@ export default async function Dashboard() {
       .from(oauthClients)
       .where(eq(oauthClients.ownerUserId, user.id))
       .orderBy(desc(oauthClients.createdAt)),
+    unreadCount(user.id),
+    listNotifications({ userId: user.id, onlyUnread: false, limit: 5 }),
   ]);
 
   return (
@@ -52,13 +57,44 @@ export default async function Dashboard() {
         <div>
           <h1 className="text-3xl font-bold">{user.displayName}</h1>
           <p className="text-neutral-600">
-            @{user.handle} · <Link href={`/@${user.handle}`} className="underline">public profile</Link>
+            @{user.handle} · <Link href={`/@${user.handle}`} className="underline">public profile</Link> ·{" "}
+            <Link href="/feed" className="underline">feed</Link> ·{" "}
+            <Link href="/dashboard/bookmarks" className="underline">bookmarks</Link>
           </p>
         </div>
-        <form action="/api/auth/logout" method="post">
-          <button className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm">Sign out</button>
-        </form>
+        <div className="flex items-center gap-3">
+          <span className="relative inline-flex items-center rounded-full border border-neutral-300 px-3 py-1.5 text-sm">
+            Notifications
+            {unread > 0 ? (
+              <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-xs font-semibold text-white">
+                {unread}
+              </span>
+            ) : null}
+          </span>
+          <form action="/api/auth/logout" method="post">
+            <button className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm">Sign out</button>
+          </form>
+        </div>
       </header>
+
+      {recentNotifications.items.length ? (
+        <section className="mt-8 rounded-md border border-neutral-200">
+          <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 text-sm">
+            <span className="font-medium">Recent activity</span>
+            <span className="text-xs text-neutral-500">{unread} unread</span>
+          </div>
+          <ul className="divide-y divide-neutral-200">
+            {recentNotifications.items.map((n) => (
+              <li key={n.id} className={`px-4 py-3 text-sm ${n.readAt ? "text-neutral-500" : "text-neutral-900"}`}>
+                <span className="font-medium">{n.kind}</span>
+                <span className="ml-2 text-xs text-neutral-500">
+                  {new Date(n.createdAt).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="mt-12">
         <h2 className="text-xl font-semibold">API keys</h2>

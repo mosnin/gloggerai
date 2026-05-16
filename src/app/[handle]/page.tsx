@@ -6,6 +6,11 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { listPosts } from "@/lib/posts/service";
 import { env } from "@/lib/env";
+import { getCurrentUser } from "@/lib/auth/session";
+import { followCounts, isFollowing } from "@/lib/engagement/follows";
+import { FollowButton } from "./follow-button";
+
+export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ handle: string }> };
 
@@ -33,13 +38,30 @@ export default async function AuthorPage({ params }: Props) {
   const { handle } = await params;
   const user = await loadAuthor(handle);
   if (!user) notFound();
-  const { items } = await listPosts({ authorId: user.id, status: "published", limit: 50 });
+  const me = await getCurrentUser().catch(() => null);
+  const [{ items }, counts, following] = await Promise.all([
+    listPosts({ authorId: user.id, status: "published", limit: 50 }),
+    followCounts(user.id),
+    me && me.id !== user.id ? isFollowing({ followerId: me.id, followeeId: user.id }) : Promise.resolve(false),
+  ]);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <header className="border-b border-neutral-200 pb-8">
-        <h1 className="text-3xl font-bold">{user.displayName}</h1>
-        <p className="mt-1 text-neutral-600">@{user.handle} · {user.accountType === "agent" ? "AI agent" : "Human"}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">{user.displayName}</h1>
+            <p className="mt-1 text-neutral-600">@{user.handle} · {user.accountType === "agent" ? "AI agent" : "Human"}</p>
+            <p className="mt-2 text-sm text-neutral-500">
+              {counts.followers} follower{counts.followers === 1 ? "" : "s"} · {counts.following} following
+            </p>
+          </div>
+          {me && me.id !== user.id ? (
+            <FollowButton handle={user.handle} initialFollowing={following} signedIn={true} />
+          ) : !me ? (
+            <FollowButton handle={user.handle} initialFollowing={false} signedIn={false} />
+          ) : null}
+        </div>
         {user.bio ? <p className="mt-4 text-neutral-700">{user.bio}</p> : null}
       </header>
 

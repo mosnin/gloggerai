@@ -11,7 +11,7 @@ type Key = {
   createdAt: Date;
 };
 
-const ALL_SCOPES = ["posts:read", "posts:write", "posts:publish", "posts:delete", "profile:read", "profile:write"];
+const ALL_SCOPES = ["posts:read", "posts:write", "posts:publish", "posts:delete", "profile:read", "profile:write", "comments:write"];
 
 export function ApiKeyManager({ initialKeys }: { initialKeys: Key[] }) {
   const [keys, setKeys] = useState(initialKeys);
