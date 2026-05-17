@@ -37,9 +37,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (publishFail) return publishFail;
   }
 
-  const updated = await updatePost({ postId: id, authorId: auth.user.id, input: parsed.data });
-  if (!updated) return fail("not_found", "Post not found", 404);
-  const body = { post: updated };
+  const result = await updatePost({ postId: id, authorId: auth.user.id, apiKeyId, input: parsed.data });
+  if (!result) return fail("not_found", "Post not found", 404);
+  if ("error" in result) return fail(result.error.code, result.error.message, 403);
+  const body = { post: result.post };
   if (idemp.key && apiKeyId) await storeIdempotent(idemp.key, apiKeyId, "PATCH", `/api/posts/${id}`, 200, body);
   return ok(body);
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authenticate, requireScope } from "@/lib/api/auth-guard";
 import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
 import { checkDailyPostLimit } from "@/lib/api/abuse";
-import { bumpUsage, checkPostQuota, requireFeature } from "@/lib/billing/service";
+import { releasePostReservation, requireFeature, reservePostQuota } from "@/lib/billing/service";
 import { fail, ok } from "@/lib/api/response";
 import { PostCreate } from "@/lib/posts/schema";
 import { createPost } from "@/lib/posts/service";
@@ -34,8 +34,6 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());
 
   const results: ItemResult[] = [];
-  let createdCount = 0;
-  let publishedCount = 0;
 
   for (let i = 0; i < parsed.data.items.length; i++) {
     const raw = parsed.data.items[i];
@@ -58,11 +56,7 @@ export async function POST(req: NextRequest) {
       results.push({ index: i, ok: false, error: { code: "daily_limit_exceeded", message: `cap ${limit.cap} reached` } });
       continue;
     }
-    const quota = await checkPostQuota(auth.user.id);
-    if (!quota.ok) {
-      results.push({ index: i, ok: false, error: { code: "plan_quota_exceeded", message: quota.reason } });
-      continue;
-    }
+
     if (itemParse.data.publishAt) {
       const feat = await requireFeature(auth.user.id, "scheduledPublishing");
       if (!feat.ok) {
@@ -83,30 +77,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Reserve quota per-item so concurrent batches from the same user don't
+    // overshoot the monthly cap.
+    const wantsPublish =
+      itemParse.data.status === "published" ||
+      (itemParse.data.publishAt && new Date(itemParse.data.publishAt) > new Date());
+    const reservation = await reservePostQuota({
+      userId: auth.user.id,
+      count: 1,
+      publishedCount: wantsPublish ? 1 : 0,
+    });
+    if (!reservation.ok) {
+      results.push({ index: i, ok: false, error: { code: "plan_quota_exceeded", message: reservation.reason } });
+      continue;
+    }
+
+    let result: Awaited<ReturnType<typeof createPost>>;
     try {
-      const post = await createPost({
+      result = await createPost({
         authorId: auth.user.id,
         apiKeyId,
         input: itemParse.data,
       });
-      createdCount += 1;
-      if (post.status === "published") publishedCount += 1;
-      const itemBody = { post };
-      if (batchIdemp.key && apiKeyId) {
-        await storeIdempotent(`${batchIdemp.key}:${i}`, apiKeyId, "POST", "/api/posts/batch", 201, itemBody);
-      }
-      results.push({ index: i, ok: true, post });
     } catch (err) {
+      await releasePostReservation({
+        userId: auth.user.id,
+        count: 1,
+        publishedCount: wantsPublish ? 1 : 0,
+      });
       results.push({
         index: i,
         ok: false,
         error: { code: "internal_error", message: err instanceof Error ? err.message : String(err) },
       });
+      continue;
     }
-  }
 
-  if (createdCount > 0) {
-    await bumpUsage({ userId: auth.user.id, postsCreated: createdCount, postsPublished: publishedCount });
+    if ("error" in result) {
+      await releasePostReservation({
+        userId: auth.user.id,
+        count: 1,
+        publishedCount: wantsPublish ? 1 : 0,
+      });
+      results.push({ index: i, ok: false, error: { code: result.error.code, message: result.error.message } });
+      continue;
+    }
+
+    if (wantsPublish && result.post.status !== "published") {
+      await releasePostReservation({ userId: auth.user.id, count: 0, publishedCount: 1 });
+    }
+
+    const itemBody = { post: result.post };
+    if (batchIdemp.key && apiKeyId) {
+      await storeIdempotent(`${batchIdemp.key}:${i}`, apiKeyId, "POST", "/api/posts/batch", 201, itemBody);
+    }
+    results.push({ index: i, ok: true, post: result.post });
   }
 
   const body = { results };
