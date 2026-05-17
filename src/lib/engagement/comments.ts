@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { comments, type Comment } from "@/db/schemas/engagement";
 import { posts, users } from "@/db/schema";
 import { moderateContent } from "@/lib/posts/moderation";
+import { fanOutEvent } from "@/lib/jobs/handlers";
 import { notifyCommentCreated } from "./notifications";
 
 export type CommentListItem = {
@@ -144,13 +145,42 @@ export async function createComment(opts: {
     commentId: row.id,
   });
 
+  // Outbound webhook subscribers of the POST AUTHOR see comments on their
+  // post. Fire-and-forget; failures are tracked by the job worker.
+  void fanOutEvent({
+    userId: post.authorId,
+    event: "comment.created",
+    data: {
+      postId: post.id,
+      commentId: row.id,
+      authorId: opts.authorId,
+      parentId: opts.parentId ?? null,
+    },
+  }).catch(() => {});
+
   return { comment: row };
 }
 
 export async function deleteComment(opts: { id: string; userId: string }): Promise<boolean> {
+  const [row] = await db
+    .select({ id: comments.id, postId: comments.postId })
+    .from(comments)
+    .where(and(eq(comments.id, opts.id), eq(comments.authorId, opts.userId)))
+    .limit(1);
+  if (!row) return false;
   const res = await db
     .delete(comments)
     .where(and(eq(comments.id, opts.id), eq(comments.authorId, opts.userId)))
     .returning({ id: comments.id });
-  return res.length > 0;
+  if (res.length === 0) return false;
+  // Find the post author so the right outbound webhook subscriber sees it.
+  const [post] = await db.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, row.postId)).limit(1);
+  if (post) {
+    void fanOutEvent({
+      userId: post.authorId,
+      event: "comment.deleted",
+      data: { postId: row.postId, commentId: row.id },
+    }).catch(() => {});
+  }
+  return true;
 }

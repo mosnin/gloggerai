@@ -2,7 +2,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { claps } from "@/db/schemas/engagement";
 import { posts } from "@/db/schema";
+import { fanOutEvent } from "@/lib/jobs/handlers";
 import { notifyClapThreshold, distinctClapperCount } from "./notifications";
+
+const CLAP_WEBHOOK_THRESHOLDS = [10, 50, 100];
 
 export async function upsertClap(opts: { postId: string; userId: string; count: number }): Promise<{
   total: number;
@@ -43,6 +46,13 @@ export async function upsertClap(opts: { postId: string; userId: string; count: 
       postAuthorId: post.authorId,
       totalClappers: afterDistinct,
     });
+    if (CLAP_WEBHOOK_THRESHOLDS.includes(afterDistinct)) {
+      void fanOutEvent({
+        userId: post.authorId,
+        event: "claps.threshold",
+        data: { postId: post.id, threshold: afterDistinct, totalClappers: afterDistinct },
+      }).catch(() => {});
+    }
   }
 
   return { total: updated?.total ?? 0, mine: opts.count };
