@@ -7,6 +7,7 @@ import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { uniqueHandle } from "@/lib/auth/handle";
 import { verifyTurnstile } from "@/lib/auth/turnstile";
+import { requireCsrf } from "@/lib/api/csrf";
 import { ok, fail } from "@/lib/api/response";
 
 const Body = z.object({
@@ -18,6 +19,8 @@ const Body = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const csrf = await requireCsrf(req);
+  if (csrf) return csrf;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());
   const { email, password, displayName, accountType } = parsed.data;

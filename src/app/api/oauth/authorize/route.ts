@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { oauthClients, oauthAuthorizationCodes } from "@/db/schemas/oauth";
 import { getCurrentUser } from "@/lib/auth/session";
 import { fail } from "@/lib/api/response";
+import { issueCsrfToken, requireCsrf } from "@/lib/api/csrf";
 import { genAuthorizationCode, sha256Hex } from "@/lib/oauth/util";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +63,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL(`/login?next=${next}`, req.url));
   }
 
+  // Issue or refresh the CSRF cookie before rendering the consent form. The
+  // form embeds the same token in a hidden field; the POST handler enforces
+  // double-submit equality. Without this guard a malicious site could trick
+  // a logged-in user into auto-approving an OAuth app.
+  const csrfToken = await issueCsrfToken();
+
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Authorize ${escape(client.name)}</title>
 <style>body{font-family:system-ui;margin:0;padding:48px;background:#fafafa}main{max-width:520px;margin:0 auto;background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:32px}h1{margin:0 0 8px;font-size:22px}p{color:#555;margin:0 0 12px}ul{margin:8px 0 24px;padding-left:20px;color:#444}button{background:#111;color:#fff;border:0;padding:10px 16px;border-radius:8px;font-size:14px;cursor:pointer}button.cancel{background:#fff;color:#111;border:1px solid #ddd;margin-right:8px}code{background:#f3f3f3;padding:2px 6px;border-radius:4px;font-size:12px}</style></head>
 <body><main>
@@ -73,6 +80,7 @@ ${Object.entries(p)
   .filter(([, v]) => v !== undefined)
   .map(([k, v]) => `<input type="hidden" name="${escape(k)}" value="${escape(String(v))}">`)
   .join("")}
+<input type="hidden" name="csrf_token" value="${escape(csrfToken)}">
 <button class="cancel" name="decision" value="deny" type="submit">Deny</button>
 <button name="decision" value="approve" type="submit">Approve</button>
 </form>
@@ -86,6 +94,20 @@ function escape(s: string): string {
 
 export async function POST(req: NextRequest) {
   const form = await req.formData();
+  // Form posts the CSRF token in a hidden field rather than a header — the
+  // requireCsrf helper still does cookie equality check via x-csrf-token, so
+  // we mirror the form field into the header before validating.
+  const csrfFromForm = String(form.get("csrf_token") ?? "");
+  const reqWithHeader = new Request(req.url, {
+    method: req.method,
+    headers: new Headers([
+      ...Array.from(req.headers.entries()),
+      ["x-csrf-token", csrfFromForm],
+    ]),
+  }) as unknown as NextRequest;
+  const csrf = await requireCsrf(reqWithHeader);
+  if (csrf) return csrf;
+
   const p: Partial<AuthParams> & { decision?: string } = {
     client_id: (form.get("client_id") as string) ?? undefined,
     redirect_uri: (form.get("redirect_uri") as string) ?? undefined,
