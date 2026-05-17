@@ -9,7 +9,27 @@ import { upsertPostEmbedding } from "@/lib/embeddings/service";
 import { enqueue } from "@/lib/jobs/queue";
 import { fanOutEvent } from "@/lib/jobs/handlers";
 import { notifyPostPublished } from "@/lib/engagement/notifications";
+import { isEmailVerified } from "@/lib/auth/email-verification";
 import type { PostCreateInput, PostUpdateInput } from "./schema";
+
+/**
+ * Result of a publish-gate check. Centralized here so every call site that
+ * creates or publishes a post enforces the same rules — previously single-
+ * post-create, batch-create, and session-authed publish each had subtly
+ * different checks.
+ */
+export type PublishGate = { ok: true } | { ok: false; code: string; message: string };
+
+export async function checkPublishGate(opts: {
+  userId: string;
+  wantsPublish: boolean;
+}): Promise<PublishGate> {
+  if (!opts.wantsPublish) return { ok: true };
+  if (!(await isEmailVerified(opts.userId))) {
+    return { ok: false, code: "email_not_verified", message: "Verify your email before publishing" };
+  }
+  return { ok: true };
+}
 
 function scheduleEmbedding(postId: string, title: string, body: string): void {
   void upsertPostEmbedding({ postId, title, body }).catch(() => {});
@@ -41,13 +61,20 @@ export async function createPost(opts: {
   authorId: string;
   apiKeyId?: string | null;
   input: PostCreateInput;
-}): Promise<Post> {
+}): Promise<{ post: Post } | { error: PublishGate & { ok: false } }> {
   const { authorId, apiKeyId, input } = opts;
   const slug = input.slug ?? (await uniqueSlug(authorId, input.title));
   const minutes = Math.max(1, Math.round(readingTime(input.contentMd).minutes));
   const moderation = await moderateContent(input.title, input.contentMd);
   const scheduled = input.publishAt ? new Date(input.publishAt) : null;
   const isScheduled = !!scheduled && scheduled > new Date();
+  // Email-verification gate is enforced here so single-create, batch-create,
+  // and session-authed publish all behave the same. Scheduled publishes also
+  // count as a publish-intent.
+  const wantsPublish = input.status === "published" || isScheduled;
+  const gate = await checkPublishGate({ userId: authorId, wantsPublish });
+  if (!gate.ok) return { error: gate };
+
   const finalStatus =
     isScheduled
       ? "draft"
@@ -93,7 +120,7 @@ export async function createPost(opts: {
     announce("post.published", row.authorId, { postId: row.id, slug: row.slug });
     announcePublish({ id: row.id, authorId: row.authorId, tags: row.tags });
   }
-  return row;
+  return { post: row };
 }
 
 export async function updatePost(opts: {
@@ -101,7 +128,7 @@ export async function updatePost(opts: {
   authorId: string;
   apiKeyId?: string | null;
   input: PostUpdateInput;
-}): Promise<Post | null> {
+}): Promise<{ post: Post } | { error: PublishGate & { ok: false } } | null> {
   const { postId, authorId, input, apiKeyId } = opts;
   const [current] = await db
     .select()
@@ -109,6 +136,13 @@ export async function updatePost(opts: {
     .where(and(eq(posts.id, postId), eq(posts.authorId, authorId)))
     .limit(1);
   if (!current) return null;
+
+  // Email-verification gate before we touch the row. Anything that would
+  // bring the post to published (explicit status='published' or first publish
+  // via the publish endpoint) goes through it.
+  const wantsPublish = input.status === "published" && current.status !== "published";
+  const gate = await checkPublishGate({ userId: authorId, wantsPublish });
+  if (!gate.ok) return { error: gate };
 
   await snapshotRevision({ post: current, editedByUserId: authorId, editedByApiKeyId: apiKeyId ?? null });
 
@@ -157,7 +191,7 @@ export async function updatePost(opts: {
       announcePublish({ id: updated.id, authorId: updated.authorId, tags: updated.tags });
     }
   }
-  return updated;
+  return { post: updated };
 }
 
 export async function restorePostFromRevision(opts: {

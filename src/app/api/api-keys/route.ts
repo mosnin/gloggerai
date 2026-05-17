@@ -5,12 +5,14 @@ import { db } from "@/db/client";
 import { apiKeys } from "@/db/schema";
 import { authenticate } from "@/lib/api/auth-guard";
 import { requireCsrf } from "@/lib/api/csrf";
+import { maxRateLimitForUser } from "@/lib/billing/service";
 import { ok, fail } from "@/lib/api/response";
 import { ALL_SCOPES, generateApiKey } from "@/lib/auth/api-key";
 
 const CreateBody = z.object({
   name: z.string().min(1).max(80),
   scopes: z.array(z.enum(ALL_SCOPES)).min(1),
+  // Hard ceiling of 10000 for sanity; real cap is the user's plan tier.
   rateLimitPerMinute: z.number().int().min(1).max(10_000).default(60),
 });
 
@@ -44,6 +46,19 @@ export async function POST(req: NextRequest) {
 
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());
+
+  // Cap the requested rate limit by the user's plan tier. Without this a
+  // free-tier user could self-grant a 10,000/min ceiling and bypass the
+  // monthly api_requests cap by burning through it in minutes.
+  const tierCap = await maxRateLimitForUser(auth.user.id);
+  if (parsed.data.rateLimitPerMinute > tierCap) {
+    return fail(
+      "plan_rate_limit_exceeded",
+      `Your plan caps rateLimitPerMinute at ${tierCap}.`,
+      402,
+      { requested: parsed.data.rateLimitPerMinute, cap: tierCap },
+    );
+  }
 
   const { plain, prefix, hash } = generateApiKey();
   const [row] = await db

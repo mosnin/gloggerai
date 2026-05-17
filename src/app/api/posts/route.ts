@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import { authenticate, requireScope } from "@/lib/api/auth-guard";
 import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
 import { checkDailyPostLimit } from "@/lib/api/abuse";
-import { bumpUsage, checkPostQuota, requireFeature } from "@/lib/billing/service";
-import { isEmailVerified } from "@/lib/auth/email-verification";
+import { releasePostReservation, requireFeature, reservePostQuota } from "@/lib/billing/service";
 import { ok, fail } from "@/lib/api/response";
 import { PostCreate, PostListQuery } from "@/lib/posts/schema";
 import { createPost, listPosts } from "@/lib/posts/service";
@@ -47,9 +46,6 @@ export async function POST(req: NextRequest) {
   if (parsed.data.status === "published" && auth.kind === "api_key") {
     const publishFail = requireScope(auth, "posts:publish");
     if (publishFail) return publishFail;
-    if (!(await isEmailVerified(auth.user.id))) {
-      return fail("email_not_verified", "Verify your email before publishing", 403);
-    }
   }
 
   const limit = await checkDailyPostLimit(auth.user.id);
@@ -57,29 +53,57 @@ export async function POST(req: NextRequest) {
     return fail("daily_limit_exceeded", `Author capped at ${limit.cap} posts per day`, 429, { used: limit.used });
   }
 
-  const quota = await checkPostQuota(auth.user.id);
-  if (!quota.ok) {
-    return fail("plan_quota_exceeded", quota.reason, 402, { limit: quota.limit, used: quota.used });
-  }
-
   if (parsed.data.publishAt) {
     const feat = await requireFeature(auth.user.id, "scheduledPublishing");
     if (!feat.ok) return fail("plan_feature_required", feat.reason, 402);
   }
 
-  const post = await createPost({
-    authorId: auth.user.id,
-    apiKeyId: auth.kind === "api_key" ? auth.key.id : null,
-    input: parsed.data,
-  });
-
-  await bumpUsage({
+  // Reserve quota atomically BEFORE the insert. If createPost throws or the
+  // publish gate rejects, we release.
+  const wantsPublish =
+    parsed.data.status === "published" ||
+    (parsed.data.publishAt && new Date(parsed.data.publishAt) > new Date());
+  const reservation = await reservePostQuota({
     userId: auth.user.id,
-    postsCreated: 1,
-    postsPublished: post.status === "published" ? 1 : 0,
+    count: 1,
+    publishedCount: wantsPublish ? 1 : 0,
   });
+  if (!reservation.ok) {
+    return fail("plan_quota_exceeded", reservation.reason, 402, { limit: reservation.limit, used: reservation.used });
+  }
 
-  const body = { post };
+  let result;
+  try {
+    result = await createPost({
+      authorId: auth.user.id,
+      apiKeyId: auth.kind === "api_key" ? auth.key.id : null,
+      input: parsed.data,
+    });
+  } catch (err) {
+    await releasePostReservation({
+      userId: auth.user.id,
+      count: 1,
+      publishedCount: wantsPublish ? 1 : 0,
+    });
+    throw err;
+  }
+
+  if ("error" in result) {
+    await releasePostReservation({
+      userId: auth.user.id,
+      count: 1,
+      publishedCount: wantsPublish ? 1 : 0,
+    });
+    return fail(result.error.code, result.error.message, 403);
+  }
+
+  // Reservation assumed `wantsPublish` published-count; the actual publish
+  // may have been downgraded to draft by moderation. Reconcile.
+  if (wantsPublish && result.post.status !== "published") {
+    await releasePostReservation({ userId: auth.user.id, count: 0, publishedCount: 1 });
+  }
+
+  const body = { post: result.post };
   const status = 201;
   if (idemp.key && auth.kind === "api_key") {
     await storeIdempotent(idemp.key, auth.key.id, "POST", "/api/posts", status, body);
