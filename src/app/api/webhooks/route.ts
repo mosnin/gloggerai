@@ -7,9 +7,17 @@ import { webhooks } from "@/db/schema";
 import { authenticate } from "@/lib/api/auth-guard";
 import { requireCsrf } from "@/lib/api/csrf";
 import { checkIdempotency, storeIdempotent } from "@/lib/api/idempotency";
+import { validateOutboundUrl } from "@/lib/security/url-allowlist";
 import { fail, ok } from "@/lib/api/response";
 
-const KNOWN_EVENTS = ["post.published", "post.updated", "post.deleted"] as const;
+const KNOWN_EVENTS = [
+  "post.published",
+  "post.updated",
+  "post.deleted",
+  "comment.created",
+  "comment.deleted",
+  "claps.threshold",
+] as const;
 
 const CreateBody = z.object({
   url: z.string().url(),
@@ -44,6 +52,13 @@ export async function POST(req: NextRequest) {
 
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422, parsed.error.flatten());
+
+  // SSRF guard. The DNS-resolution check happens again at delivery time
+  // (handleDeliverWebhook) to defeat DNS rebinding; this layer rejects the
+  // obvious bad inputs at registration so we don't store unusable URLs.
+  const urlCheck = validateOutboundUrl(parsed.data.url);
+  if (!urlCheck.ok) return fail("invalid_webhook_url", urlCheck.reason, 422);
+
   const secret = `whsec_${randomBytes(24).toString("base64url")}`;
   const [row] = await db
     .insert(webhooks)

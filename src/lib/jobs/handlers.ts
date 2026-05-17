@@ -6,6 +6,7 @@ import { moderateContent } from "@/lib/posts/moderation";
 import { upsertPostEmbedding } from "@/lib/embeddings/service";
 import { log } from "@/lib/observability/logger";
 import { notifyPostPublished } from "@/lib/engagement/notifications";
+import { resolveAndCheck } from "@/lib/security/url-allowlist";
 
 export async function handlePublishScheduled(payload: { postId: string }): Promise<void> {
   const [post] = await db.select().from(posts).where(eq(posts.id, payload.postId)).limit(1);
@@ -43,29 +44,67 @@ export async function handleDeliverWebhook(payload: { deliveryId: string }): Pro
   const [hook] = await db.select().from(webhooks).where(eq(webhooks.id, delivery.webhookId)).limit(1);
   if (!hook || !hook.active) return;
 
+  const attempt = delivery.attempts + 1;
   const body = JSON.stringify({ event: delivery.event, data: delivery.payload, id: delivery.id });
   const ts = Math.floor(Date.now() / 1000).toString();
   const signature = createHmac("sha256", hook.secret).update(`${ts}.${body}`).digest("hex");
 
-  const res = await fetch(hook.url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-gloggerai-event": delivery.event,
-      "x-gloggerai-delivery": delivery.id,
-      "x-gloggerai-timestamp": ts,
-      "x-gloggerai-signature": `t=${ts},v1=${signature}`,
-    },
-    body,
-    signal: AbortSignal.timeout(10_000),
-  });
+  // Re-check the URL right before fetch — host may have been added to a
+  // public DNS record but resolve to a private IP (rebinding). recordFailure
+  // is always called on either rejection or thrown error so the delivery
+  // row reflects reality and the job-queue retry/backoff sees a real count.
+  const recordFailure = async (status: number | null, responseBody: string) => {
+    await db
+      .update(webhookDeliveries)
+      .set({
+        status,
+        responseBody: responseBody.slice(0, 2000),
+        attempts: attempt,
+        deliveredAt: null,
+      })
+      .where(eq(webhookDeliveries.id, delivery.id));
+    log.warn("webhook.delivery_failed", {
+      deliveryId: delivery.id,
+      webhookId: hook.id,
+      url: hook.url,
+      status,
+      attempts: attempt,
+    });
+  };
+
+  const guard = await resolveAndCheck(hook.url);
+  if (!guard.ok) {
+    await recordFailure(null, `ssrf_guard: ${guard.reason}`);
+    throw new Error(`ssrf_guard: ${guard.reason}`);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(hook.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gloggerai-event": delivery.event,
+        "x-gloggerai-delivery": delivery.id,
+        "x-gloggerai-timestamp": ts,
+        "x-gloggerai-signature": `t=${ts},v1=${signature}`,
+      },
+      body,
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await recordFailure(null, `fetch_error: ${message}`);
+    throw err;
+  }
+
   const txt = await res.text().catch(() => "");
   await db
     .update(webhookDeliveries)
     .set({
       status: res.status,
       responseBody: txt.slice(0, 2000),
-      attempts: delivery.attempts + 1,
+      attempts: attempt,
       deliveredAt: res.ok ? new Date() : null,
     })
     .where(eq(webhookDeliveries.id, delivery.id));
@@ -75,7 +114,7 @@ export async function handleDeliverWebhook(payload: { deliveryId: string }): Pro
       webhookId: hook.id,
       url: hook.url,
       status: res.status,
-      attempts: delivery.attempts + 1,
+      attempts: attempt,
     });
     throw new Error(`webhook ${res.status}: ${txt.slice(0, 200)}`);
   }
