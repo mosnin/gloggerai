@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { idempotencyKeys } from "@/db/schema";
 
@@ -15,7 +15,13 @@ export async function checkIdempotency(
         ? reqOrKey.headers.get("idempotency-key")
         : null;
   if (!key) return { key: null, cached: null };
-  const [hit] = await db.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, key)).limit(1);
+  // Lookup is per-(api_key_id, key) so two API keys submitting the same string
+  // don't see each other's cached responses.
+  const [hit] = await db
+    .select()
+    .from(idempotencyKeys)
+    .where(and(eq(idempotencyKeys.apiKeyId, apiKeyId), eq(idempotencyKeys.key, key)))
+    .limit(1);
   if (!hit) return { key, cached: null };
   return {
     key,

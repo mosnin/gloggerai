@@ -9,9 +9,10 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setLoading(true);
     const f = new FormData(e.currentTarget);
+    const csrf = ((await (await fetch("/api/csrf")).json()) as { token: string }).token;
     await fetch("/api/auth/request-password-reset", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-csrf-token": csrf },
       body: JSON.stringify({ email: f.get("email") }),
     });
     setLoading(false);

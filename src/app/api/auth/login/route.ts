@@ -5,11 +5,14 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
+import { requireCsrf } from "@/lib/api/csrf";
 import { ok, fail } from "@/lib/api/response";
 
 const Body = z.object({ email: z.string().email(), password: z.string().min(1) });
 
 export async function POST(req: NextRequest) {
+  const csrf = await requireCsrf(req);
+  if (csrf) return csrf;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return fail("invalid_body", "Invalid request body", 422);
   const { email, password } = parsed.data;

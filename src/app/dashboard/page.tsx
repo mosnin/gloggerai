@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { unreadCount, listNotifications } from "@/lib/engagement/notifications";
 import { ApiKeyManager } from "./api-key-manager";
 import { OAuthApps } from "./oauth-apps";
+import { SignOutButton } from "./sign-out";
 
 export const dynamic = "force-dynamic";
 
@@ -71,9 +72,7 @@ export default async function Dashboard() {
               </span>
             ) : null}
           </span>
-          <form action="/api/auth/logout" method="post">
-            <button className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm">Sign out</button>
-          </form>
+          <SignOutButton />
         </div>
       </header>
 

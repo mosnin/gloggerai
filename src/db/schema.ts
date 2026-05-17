@@ -9,6 +9,7 @@ import {
   index,
   uniqueIndex,
   pgEnum,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { accountType, postStatus, moderationStatus, jobKind, jobStatus, orgRole } from "./schemas/enums";
@@ -117,7 +118,7 @@ export const apiKeyUsage = pgTable(
 export const idempotencyKeys = pgTable(
   "idempotency_keys",
   {
-    key: text("key").primaryKey(),
+    key: text("key").notNull(),
     apiKeyId: uuid("api_key_id").notNull().references(() => apiKeys.id, { onDelete: "cascade" }),
     method: text("method").notNull(),
     path: text("path").notNull(),
@@ -125,6 +126,12 @@ export const idempotencyKeys = pgTable(
     responseBody: jsonb("response_body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
+  (t) => ({
+    // Composite PK — keys are scoped per-api_key. Same Idempotency-Key string
+    // from different callers is independent.
+    pk: primaryKey({ columns: [t.apiKeyId, t.key] }),
+    createdAtIdx: index("idempotency_keys_created_at_idx").on(t.createdAt),
+  }),
 );
 
 export const usersRelations = relations(users, ({ many }) => ({

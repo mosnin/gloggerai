@@ -19,9 +19,10 @@ export default function ResetPasswordPage() {
     setError(null);
     setLoading(true);
     const f = new FormData(e.currentTarget);
+    const csrf = ((await (await fetch("/api/csrf")).json()) as { token: string }).token;
     const res = await fetch("/api/auth/reset-password", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-csrf-token": csrf },
       body: JSON.stringify({ token, password: f.get("password") }),
     });
     setLoading(false);
